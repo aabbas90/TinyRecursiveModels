@@ -61,6 +61,7 @@ class PretrainConfig(pydantic.BaseModel):
     weight_decay: float
     beta1: float
     beta2: float
+    num_steps_for_grad: Optional[int] = 1 # num supervision steps before parameter update.  
 
     # Puzzle embedding
     puzzle_emb_lr: float
@@ -300,9 +301,10 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
             train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
 
     # Forward
-    train_state.carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    for _ in range(config.num_steps_for_grad): # Run multiple passes to gather gradients across different supervision steps before param update
+        train_state.carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+        ((1 / (global_batch_size)) * loss).backward()
 
-    ((1 / global_batch_size) * loss).backward()
 
     # Allreduce
     if world_size > 1:
